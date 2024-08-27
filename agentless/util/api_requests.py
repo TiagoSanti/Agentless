@@ -3,6 +3,12 @@ from typing import Dict, Union
 
 import openai
 import tiktoken
+from ollama import Client
+
+
+def handler(signum, frame):
+    # swallow signum and frame
+    raise Exception("end of time")
 
 
 def num_tokens_from_messages(message, model="gpt-3.5-turbo-0301"):
@@ -49,11 +55,6 @@ def create_chatgpt_config(
     return config
 
 
-def handler(signum, frame):
-    # swallow signum and frame
-    raise Exception("end of time")
-
-
 def request_chatgpt_engine(config, logger, base_url=None, max_retries=40, timeout=100):
     ret = None
     retries = 0
@@ -91,6 +92,72 @@ def request_chatgpt_engine(config, logger, base_url=None, max_retries=40, timeou
                 print(e)
                 logger.info(e)
                 time.sleep(1)
+
+        retries += 1
+
+    logger.info(f"API response {ret}")
+    return ret
+
+
+def create_ollama_config(
+    message: Union[str, list],
+    max_tokens: int,
+    temperature: float = 1,
+    batch_size: int = 1,
+    system_message: str = "You are a helpful assistant.",
+    model: str = "llama3.1:70b",
+) -> Dict:
+    if isinstance(message, list):
+        config = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "n": batch_size,
+            "messages": [{"role": "system", "content": system_message}] + message,
+        }
+    else:
+        config = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "n": batch_size,
+            "messages": [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": message},
+            ],
+        }
+    return config
+
+
+def request_ollama_engine(
+    config, logger, host_url="localhost:11434", max_retries=40, timeout=100
+):
+    ret = None
+    retries = 0
+
+    client = Client(host=host_url)
+
+    while ret is None and retries < max_retries:
+        try:
+            # Attempt to get the completion
+            logger.info("Creating API request")
+
+            ret = client.chat(
+                model=config["model"],
+                messages=config["messages"],
+                options={
+                    "temperature": config["temperature"],
+                    "top_p": 1.0,  # Assuming top_p is not specified in the config
+                    "max_tokens": config["max_tokens"],
+                },
+            )
+
+        except Exception as e:
+            print("Unknown error. Waiting...")
+            logger.info("Unknown error. Waiting...")
+            print(e)
+            logger.info(e)
+            time.sleep(1)
 
         retries += 1
 

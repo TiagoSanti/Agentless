@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List
 
 from agentless.util.api_requests import create_chatgpt_config, request_chatgpt_engine
+from agentless.util.api_requests import create_ollama_config, request_ollama_engine
 
 
 class DecoderBase(ABC):
@@ -33,6 +34,58 @@ class DecoderBase(ABC):
 
     def __str__(self) -> str:
         return self.name
+
+
+class OllamaDecoder(DecoderBase):
+    def __init__(self, name: str, logger, **kwargs) -> None:
+        super().__init__(name, logger, **kwargs)
+
+    def codegen(self, message: str, num_samples: int = 1) -> List[dict]:
+        if self.temperature == 0:
+            assert num_samples == 1
+        batch_size = min(self.batch_size, num_samples)
+
+        config = create_ollama_config(
+            model=self.name,
+            system_message="",
+            message=message,
+            max_tokens=self.max_new_tokens,
+            temperature=self.temperature,
+            batch_size=batch_size,
+        )
+        ret = request_ollama_engine(config, self.logger)
+        if ret:
+            responses = [choice.message.content for choice in ret.choices]
+            completion_tokens = ret.usage.completion_tokens
+            prompt_tokens = ret.usage.prompt_tokens
+        else:
+            responses = [""]
+            completion_tokens = 0
+            prompt_tokens = 0
+
+        trajs = [
+            {
+                "response": responses[0],
+                "usage": {
+                    "completion_tokens": completion_tokens,
+                    "prompt_tokens": prompt_tokens,
+                },
+            }
+        ]
+        for response in responses[1:]:
+            trajs.append(
+                {
+                    "response": response,
+                    "usage": {
+                        "completion_tokens": 0,
+                        "prompt_tokens": 0,
+                    },
+                }
+            )
+        return trajs
+
+    def is_direct_completion(self) -> bool:
+        return False
 
 
 class OpenAIChatDecoder(DecoderBase):
@@ -158,6 +211,14 @@ def make_model(
     elif backend == "deepseek":
         return DeepSeekChatDecoder(
             name=model,
+            logger=logger,
+            batch_size=batch_size,
+            max_new_tokens=max_tokens,
+            temperature=temperature,
+        )
+    elif backend == "ollama":
+        return OllamaDecoder(
+            name=f"{backend}:{model}",
             logger=logger,
             batch_size=batch_size,
             max_new_tokens=max_tokens,
