@@ -218,7 +218,7 @@ def make_model(
         )
     elif backend == "ollama":
         return OllamaDecoder(
-            name=f"{backend}:{model}",
+            name=model,
             logger=logger,
             batch_size=batch_size,
             max_new_tokens=max_tokens,
